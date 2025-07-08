@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>요일별 차량 배정표</title>
+  <title>요일별 차량 배정표 - 고급 제약 조건</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -48,6 +48,19 @@
       color: #1d4ed8;
       font-weight: 500;
     }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-align: center;
+      color: #1f2937;
+    }
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      text-align: center;
+      color: #4b5563;
+      margin-bottom: 1.5rem;
+    }
     .notes {
       margin-top: 2rem;
       padding: 1rem;
@@ -55,6 +68,9 @@
       border-radius: 0.375rem;
       font-size: 0.875rem;
       color: #4b5563;
+    }
+    .notes p {
+      margin-bottom: 0.5rem;
     }
     .button-group {
       display: flex;
@@ -70,81 +86,267 @@
       border-radius: 0.375rem;
       cursor: pointer;
       border: none;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #1d4ed8;
     }
     #pdfButton {
       background-color: #16a34a;
+    }
+    #pdfButton:hover {
+      background-color: #15803d;
+    }
+    #resetButton {
+      background-color: #dc2626;
+    }
+    #resetButton:hover {
+      background-color: #b91c1c;
+    }
+    .overflow-container {
+      width: 100%;
+      overflow-x: auto;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div id="printableArea">
-      <h1 class="text-xl font-bold text-center mb-2">배차표</h1>
-      <h2 class="text-center text-gray-600 mb-4">(2025년 종로08번)</h2>
-      <div class="overflow-auto">
+      <h1 id="main-title">배차표</h1>
+      <h2>(2025년 종로08번)</h2>
+      <div class="overflow-container">
         <table id="assignmentTable"></table>
       </div>
       <div class="notes">
         <p><strong>주의)</strong> 오후 운행차량은 2시00분부터 운행하시길 부탁드립니다.</p>
         <p>차량 3614호는 근무자 근태확인 후 마지막 차량으로 배차가 들어갑니다.</p>
-        <p>조별 팀장님들은 아침 오전 첫 차량을 확인하시어 맨 뒷에 후에 퇴근 바랍니다.</p>
-        <p>5월 1일부터는 첫차 06:00, 막차 23:20입니다.</p>
+        <p>조별 팀장님들은 아침 오전 첫 차량을 확인하시어 맨 뒷에 후에 퇴근 바랍니다. (오전 첫차가 빠르게 주휴 할 수 있도록 배려 함)</p>
+        <p>5월 1일부터는 첫차 06:00 막차 23:20입니다.</p>
       </div>
     </div>
     <div class="button-group">
       <button id="regenerateButton">다시 배정</button>
       <button id="pdfButton">PDF로 저장</button>
+      <button id="resetButton">다시 설정</button>
     </div>
   </div>
 
   <script>
     const days = ["월", "화", "수", "목", "금", "토", "일"];
     const carAssignmentsData = [
-      { label: "1", numbers: [5504, 5535, 6201, 3611, 3615, 5510] },
-      { label: "2", numbers: [5510, 5504, 3615, 6201, 3611, 5535] },
-      { label: "3", numbers: [6201, 3611, 5504, 5510, 5535, 3615] },
-      { label: "4", numbers: [3611, 6201, 5535, 3615, 5510, 5504] },
-      { label: "5", numbers: [3615, 5510, 3611, 5504, 6201, 5535] },
-      { label: "6", numbers: [5535, 3615, 5510, 5504, 3611, 6201] },
-      { label: "7", numbers: [3614, 3614, 3614, 3614, 3614, 3614, 3614], isFixed: true }
+      { id: 1, label: "1", numbers: [5504, 5535, 6201, 3611, 3615, 5510] },
+      { id: 2, label: "2", numbers: [5510, 5504, 3615, 6201, 3611, 5535] },
+      { id: 3, label: "3", numbers: [6201, 3611, 5504, 5510, 5535, 3615] },
+      { id: 4, label: "4", numbers: [3611, 6201, 5535, 3615, 5510, 5504] },
+      { id: 5, label: "5", numbers: [3615, 5510, 3611, 5504, 6201, 5535] },
+      { id: 6, label: "6", numbers: [5535, 3615, 5510, 5535, 3611, 6201] },
+      { id: 7, label: "7", numbers: [3614, 3614, 3614, 3614, 3614, 3614, 3614], isFixed: true }
     ];
 
-    function generateAssignments() {
-      const table = document.getElementById("assignmentTable");
-      table.innerHTML = "";
+    const assignmentTable = document.getElementById("assignmentTable");
+    const regenerateButton = document.getElementById("regenerateButton");
+    const pdfButton = document.getElementById("pdfButton");
+    const resetButton = document.getElementById("resetButton");
+    const mainTitleElement = document.getElementById("main-title");
 
-      const header = document.createElement("tr");
-      header.innerHTML = "<th>차번</th>" + days.map(d => `<th>${d}</th>`).join("");
-      table.appendChild(header);
+    let currentAssignments = []; // 현재 배정표 데이터를 저장할 변수
 
-      for (let row of carAssignmentsData) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<th>${row.label}</th>` + days.map((_, i) => {
-          const num = row.isFixed ? row.numbers[i] : row.numbers[Math.floor(Math.random() * row.numbers.length)];
-          return `<td>${num}</td>`;
-        }).join("");
-        table.appendChild(tr);
+    // 배열을 무작위로 섞는 함수 (Fisher-Yates shuffle)
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
       }
+      return array;
     }
 
-    function generatePdf() {
-      const { jsPDF } = window.jspdf;
-      const printableArea = document.getElementById('printableArea');
-      html2canvas(printableArea, { scale: 2 }).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF();
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save("배차표.pdf");
+    // 차량 배정 로직 (네가 말한 제약 조건들을 추가했어!)
+    function generateValidAssignments() {
+      const MAX_ATTEMPTS = 5000; // 최대 시도 횟수
+      const nonFixedCarRows = carAssignmentsData.slice(0, 6); // 고정된 7번째 차량을 제외한 나머지 차량
+      const fixedCarRow = carAssignmentsData[6]; // 고정된 7번째 차량 (3614)
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const resultGrid = Array(carAssignmentsData.length).fill(null).map(() => Array(days.length).fill(null));
+        let isSuccess = true;
+
+        // 1. 고정된 7번째 차량 먼저 배정 (3614)
+        fixedCarRow.numbers.forEach((num, dayIndex) => {
+          resultGrid[6][dayIndex] = num; // 항상 3614
+        });
+
+        // 2. 나머지 차량들 배정
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          let availableNumbersForColumn = []; // 해당 요일에 사용 가능한 차량 번호 목록
+          nonFixedCarRows.forEach(row => {
+            availableNumbersForColumn = availableNumbersForColumn.concat(row.numbers);
+          });
+          availableNumbersForColumn = shuffleArray([...new Set(availableNumbersForColumn)]); // 중복 제거 후 섞기
+
+          // 세로줄 (열) 제약 조건: 첫 6개는 모두 달라야 함
+          let columnNumbers = new Set();
+          let currentDayAssignments = []; // 현재 요일의 배정된 차량 번호들
+
+          for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) { // 0부터 5번째 차량까지
+            let assigned = false;
+            // 해당 차량의 원래 numbers 배열에서 가능한 번호를 찾음
+            const carSpecificNumbers = shuffleArray([...carAssignmentsData[carIndex].numbers]);
+
+            for (const carNum of carSpecificNumbers) {
+              // 가로줄 (행) 제약 조건: 현재 행에서 이 번호가 2번 이상 나오지 않도록 체크 (현재까지 배정된 요일들 포함)
+              // (이 부분은 나중에 전체 행이 완성된 후 다시 검증하는 것이 더 정확함)
+
+              // 세로줄 (열) 제약 조건: 현재 요일의 첫 6개 차량은 중복되지 않아야 함
+              if (!columnNumbers.has(carNum)) {
+                resultGrid[carIndex][dayIndex] = carNum;
+                columnNumbers.add(carNum);
+                currentDayAssignments.push(carNum);
+                assigned = true;
+                break; // 이 차량에 대한 배정 완료
+              }
+            }
+            if (!assigned) { // 이 차량을 해당 요일에 배정할 수 없는 경우 (세로줄 제약 때문에)
+              isSuccess = false;
+              break;
+            }
+          }
+          if (!isSuccess) break; // 현재 시도 실패
+
+          // 최종 세로줄 검증 (3614 포함하여 중복 2개까지만 허용)
+          // 3614를 포함한 모든 열의 번호를 검사
+          const fullColumnNumbers = [...currentDayAssignments, resultGrid[6][dayIndex]];
+          const counts = {};
+          for (const num of fullColumnNumbers) {
+            counts[num] = (counts[num] || 0) + 1;
+          }
+          for (const num in counts) {
+            if (counts[num] > 2) { // 어떤 번호든 2번 초과해서 나오면 안 됨
+              isSuccess = false;
+              break;
+            }
+          }
+          if (!isSuccess) break;
+        }
+        if (!isSuccess) continue; // 다음 시도로 넘어감
+
+        // 모든 행에 대한 가로줄 중복 검증 (2개 초과 중복 금지)
+        for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
+          const rowNumbers = resultGrid[carIndex];
+          const counts = {};
+          for (const num of rowNumbers) {
+            counts[num] = (counts[num] || 0) + 1;
+          }
+          for (const num in counts) {
+            if (counts[num] > 2) { // 어떤 번호든 2번 초과해서 나오면 안 됨
+              isSuccess = false;
+              break;
+            }
+          }
+          if (!isSuccess) break;
+        }
+
+        if (isSuccess) {
+          return resultGrid; // 유효한 배정표를 찾음!
+        }
+      }
+      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다.");
+      return null; // 유효한 배정표를 찾지 못한 경우
+    }
+
+    // 테이블 렌더링 함수
+    function renderTable(assignments) {
+      assignmentTable.innerHTML = ""; // 기존 내용 비우기
+
+      if (!assignments) {
+        assignmentTable.innerHTML = "<tr><td>배정표를 생성할 수 없습니다. 다시 시도해주세요.</td></tr>";
+        return;
+      }
+
+      // 헤더 행 생성 (요일)
+      const headerRow = assignmentTable.insertRow();
+      headerRow.insertCell().textContent = "ID"; // 첫 번째 빈 칸
+      days.forEach(day => {
+        const th = document.createElement("th");
+        th.textContent = day;
+        headerRow.appendChild(th);
+      });
+
+      // 데이터 행 생성
+      assignments.forEach((carDayAssignments, carIndex) => {
+        const row = assignmentTable.insertRow();
+        const idCell = row.insertCell();
+        idCell.textContent = carAssignmentsData[carIndex].label; // ID 또는 라벨
+
+        carDayAssignments.forEach(assignment => {
+          const cell = row.insertCell();
+          cell.textContent = assignment;
+        });
       });
     }
 
-    document.getElementById("regenerateButton").addEventListener("click", generateAssignments);
-    document.getElementById("pdfButton").addEventListener("click", generatePdf);
+    // 초기 로드 및 버튼 이벤트
+    regenerateButton.addEventListener("click", () => {
+      currentAssignments = generateValidAssignments();
+      renderTable(currentAssignments);
+    });
 
-    generateAssignments();
+    resetButton.addEventListener("click", () => {
+      // 초기 상태로 되돌리거나, 새로운 빈 상태로 시작
+      // 여기서는 다시 배정 버튼을 누른 것과 동일하게 동작하도록 설정
+      currentAssignments = generateValidAssignments();
+      renderTable(currentAssignments);
+      // 혹은 완전히 비우고 싶다면 assignmentTable.innerHTML = "";
+    });
+
+    pdfButton.addEventListener("click", async () => {
+      const { jsPDF } = window.jspdf;
+      const printableArea = document.getElementById("printableArea");
+
+      // PDF 저장 시 제목을 "차량 배정표_YYYYMMDD_HHMMSS" 형식으로 변경
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const filename = `차량 배정표_${year}${month}${day}_${hours}${minutes}${seconds}.pdf`;
+
+      // 잠시 제목 변경
+      const originalTitle = mainTitleElement.textContent;
+      mainTitleElement.textContent = `차량 배정표 (${year}년 ${month}월 ${day}일)`;
+
+      html2canvas(printableArea, { scale: 2 }).then(canvas => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = 297; // A4 height in mm
+        const imgHeight = canvas.height * imgWidth / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+        pdf.save(filename);
+
+        // 원래 제목으로 되돌리기
+        mainTitleElement.textContent = originalTitle;
+      });
+    });
+
+
+    // 페이지 로드 시 초기 배정표 생성
+    document.addEventListener("DOMContentLoaded", () => {
+      currentAssignments = generateValidAssignments();
+      renderTable(currentAssignments);
+    });
   </script>
 </body>
 </html>
