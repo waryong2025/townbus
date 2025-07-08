@@ -139,7 +139,7 @@
       { id: 3, label: "3", numbers: [6201, 3611, 5504, 5510, 5535, 3615] },
       { id: 4, label: "4", numbers: [3611, 6201, 5535, 3615, 5510, 5504] },
       { id: 5, label: "5", numbers: [3615, 5510, 3611, 5504, 6201, 5535] },
-      { id: 6, label: "6", numbers: [5535, 3615, 5510, 5535, 3611, 6201] },
+      { id: 6, label: "6", numbers: [5535, 3615, 5510, 6201, 3611, 5504] },
       { id: 7, label: "7", numbers: [3614, 3614, 3614, 3614, 3614, 3614, 3614], isFixed: true }
     ];
 
@@ -160,96 +160,141 @@
       return array;
     }
 
-    // 차량 배정 로직 (네가 말한 제약 조건들을 추가했어!)
+    // 차량 배정 로직
     function generateValidAssignments() {
-      const MAX_ATTEMPTS = 5000; // 최대 시도 횟수
+      const MAX_ATTEMPTS = 50000; // 최대 시도 횟수 (제약 조건이 까다로워 더 늘렸어!)
       const nonFixedCarRows = carAssignmentsData.slice(0, 6); // 고정된 7번째 차량을 제외한 나머지 차량
-      const fixedCarRow = carAssignmentsData[6]; // 고정된 7번째 차량 (3614)
+      const fixedCarNumber = 3614; // 고정된 7번째 차량 번호
+      const allPossibleNonFixedNumbers = Array.from(new Set(nonFixedCarRows.flatMap(row => row.numbers))); // 3614를 제외한 모든 가능한 번호들
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         const resultGrid = Array(carAssignmentsData.length).fill(null).map(() => Array(days.length).fill(null));
         let isSuccess = true;
 
         // 1. 고정된 7번째 차량 먼저 배정 (3614)
-        fixedCarRow.numbers.forEach((num, dayIndex) => {
-          resultGrid[6][dayIndex] = num; // 항상 3614
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          resultGrid[6][dayIndex] = fixedCarNumber; // 항상 3614
+        }
+
+        // 각 행(차량 ID)별로 배정될 번호 풀을 준비 (원본 numbers 배열을 섞어서 사용)
+        // 각 행은 7개의 칸을 채워야 하므로, 6개의 고유 번호 중 하나가 두 번 사용될 예정
+        const availableNumbersPools = nonFixedCarRows.map(carData => {
+            const uniqueNums = Array.from(new Set(carData.numbers));
+            // 6개의 고유 번호로 7칸을 채우려면, 이 중 하나를 복제해야 함
+            // 어떤 번호를 복제할지는 나중에 배정 로직에서 결정
+            return uniqueNums; // 일단 고유 번호만 가져와서 섞어둠
         });
 
-        // 2. 나머지 차량들 배정
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-          let availableNumbersForColumn = []; // 해당 요일에 사용 가능한 차량 번호 목록
-          nonFixedCarRows.forEach(row => {
-            availableNumbersForColumn = availableNumbersForColumn.concat(row.numbers);
-          });
-          availableNumbersForColumn = shuffleArray([...new Set(availableNumbersForColumn)]); // 중복 제거 후 섞기
+        // 2. 나머지 차량들 (ID 1~6) 배정
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) { // 요일별로 채워나감
+            const usedNumbersInColumnForThisDay = new Set();
+            usedNumbersInColumnForThisDay.add(fixedCarNumber); // 7번째 차량은 항상 3614
 
-          // 세로줄 (열) 제약 조건: 첫 6개는 모두 달라야 함
-          let columnNumbers = new Set();
-          let currentDayAssignments = []; // 현재 요일의 배정된 차량 번호들
+            // 각 행(carIndex)에 대해 해당 요일(dayIndex)의 번호를 찾음
+            for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
+                let assigned = false;
+                const shuffledAvailableNums = shuffleArray([...availableNumbersPools[carIndex]]); // 해당 행의 사용 가능한 번호들을 섞음
 
-          for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) { // 0부터 5번째 차량까지
-            let assigned = false;
-            // 해당 차량의 원래 numbers 배열에서 가능한 번호를 찾음
-            const carSpecificNumbers = shuffleArray([...carAssignmentsData[carIndex].numbers]);
+                // 현재까지 배정된 이 행의 번호 사용 횟수 (가로줄 중복 횟수 체크용)
+                const currentRowCounts = {};
+                for(let prevDay = 0; prevDay < dayIndex; prevDay++) {
+                    const num = resultGrid[carIndex][prevDay];
+                    if (num !== null) currentRowCounts[num] = (currentRowCounts[num] || 0) + 1;
+                }
 
-            for (const carNum of carSpecificNumbers) {
-              // 가로줄 (행) 제약 조건: 현재 행에서 이 번호가 2번 이상 나오지 않도록 체크 (현재까지 배정된 요일들 포함)
-              // (이 부분은 나중에 전체 행이 완성된 후 다시 검증하는 것이 더 정확함)
+                for (const carNum of shuffledAvailableNums) {
+                    // 1. 세로줄(열) 제약: 현재 열에서 이미 사용된 번호가 아니어야 함 (3614 제외)
+                    if (usedNumbersInColumnForThisDay.has(carNum)) {
+                        continue;
+                    }
 
-              // 세로줄 (열) 제약 조건: 현재 요일의 첫 6개 차량은 중복되지 않아야 함
-              if (!columnNumbers.has(carNum)) {
-                resultGrid[carIndex][dayIndex] = carNum;
-                columnNumbers.add(carNum);
-                currentDayAssignments.push(carNum);
-                assigned = true;
-                break; // 이 차량에 대한 배정 완료
-              }
+                    // 2. 가로줄(행) 제약: 이 번호가 현재 행에서 2번 초과하여 사용되지 않았는지 확인
+                    // (6개 고유 번호로 7일을 채워야 하므로, 한 번호는 반드시 두 번 사용됨)
+                    if ((currentRowCounts[carNum] || 0) >= 2) {
+                        continue;
+                    }
+
+                    // 3. 가로줄(행) 제약: 같은 숫자가 옆에 바로 붙지 말아야 함
+                    if (dayIndex > 0 && resultGrid[carIndex][dayIndex - 1] === carNum) {
+                        continue;
+                    }
+
+                    // 모든 제약 조건을 만족하면 배정
+                    resultGrid[carIndex][dayIndex] = carNum;
+                    usedNumbersInColumnForThisDay.add(carNum); // 현재 열에 사용된 번호로 기록
+                    assigned = true;
+                    break;
+                }
+                if (!assigned) { // 이 차량을 해당 요일에 배정할 수 없는 경우
+                    isSuccess = false;
+                    break;
+                }
             }
-            if (!assigned) { // 이 차량을 해당 요일에 배정할 수 없는 경우 (세로줄 제약 때문에)
+            if (!isSuccess) break;
+        }
+        if (!isSuccess) continue; // 다음 시도로 넘어감
+
+        // 3. 최종 검증 (혹시 모를 상황에 대비하여 모든 제약 조건을 다시 확인)
+        // 가로줄 (행) 검증: 2번 초과 중복 금지 & 옆에 바로 붙지 않기 (ID 1~6)
+        for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
+          const rowNumbers = resultGrid[carIndex];
+          const counts = {};
+          for (let i = 0; i < rowNumbers.length; i++) {
+            const num = rowNumbers[i];
+            counts[num] = (counts[num] || 0) + 1;
+
+            // 옆에 바로 붙는 중복 체크
+            if (i > 0 && rowNumbers[i] === rowNumbers[i-1]) {
+                isSuccess = false;
+                break;
+            }
+          }
+          if (!isSuccess) break; // 옆에 붙는 중복 발견
+
+          // 2번 초과 중복 체크
+          for (const num in counts) {
+            if (counts[num] > 2) {
               isSuccess = false;
               break;
             }
           }
-          if (!isSuccess) break; // 현재 시도 실패
+          if (!isSuccess) break; // 2번 초과 중복 발견
+        }
+        if (!isSuccess) continue; // 다음 시도로 넘어감
 
-          // 최종 세로줄 검증 (3614 포함하여 중복 2개까지만 허용)
-          // 3614를 포함한 모든 열의 번호를 검사
-          const fullColumnNumbers = [...currentDayAssignments, resultGrid[6][dayIndex]];
+        // 세로줄 (열) 검증: 6개는 다르고, 7번째(3614) 포함하여 3614 외에는 중복 없어야 함
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          const columnNumbers = [];
+          for (let carIdx = 0; carIdx < carAssignmentsData.length; carIdx++) {
+            columnNumbers.push(resultGrid[carIdx][dayIndex]);
+          }
+
           const counts = {};
-          for (const num of fullColumnNumbers) {
+          for (const num of columnNumbers) {
             counts[num] = (counts[num] || 0) + 1;
           }
+
           for (const num in counts) {
-            if (counts[num] > 2) { // 어떤 번호든 2번 초과해서 나오면 안 됨
-              isSuccess = false;
-              break;
+            if (num == fixedCarNumber) { // 3614는 최대 두 번까지 허용
+              if (counts[num] > 2) {
+                isSuccess = false;
+                break;
+              }
+            } else { // 다른 번호는 한 번만 허용
+              if (counts[num] > 1) {
+                isSuccess = false;
+                break;
+              }
             }
           }
           if (!isSuccess) break;
         }
         if (!isSuccess) continue; // 다음 시도로 넘어감
 
-        // 모든 행에 대한 가로줄 중복 검증 (2개 초과 중복 금지)
-        for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
-          const rowNumbers = resultGrid[carIndex];
-          const counts = {};
-          for (const num of rowNumbers) {
-            counts[num] = (counts[num] || 0) + 1;
-          }
-          for (const num in counts) {
-            if (counts[num] > 2) { // 어떤 번호든 2번 초과해서 나오면 안 됨
-              isSuccess = false;
-              break;
-            }
-          }
-          if (!isSuccess) break;
-        }
-
-        if (isSuccess) {
-          return resultGrid; // 유효한 배정표를 찾음!
-        }
+        // 모든 제약 조건을 만족했다면!
+        return resultGrid;
       }
-      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다.");
+      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다. 제약 조건이 너무 강하거나, 주어진 차량 번호로는 모든 조건을 만족하는 조합을 만들 수 없을 수 있습니다.");
       return null; // 유효한 배정표를 찾지 못한 경우
     }
 
@@ -258,13 +303,15 @@
       assignmentTable.innerHTML = ""; // 기존 내용 비우기
 
       if (!assignments) {
-        assignmentTable.innerHTML = "<tr><td>배정표를 생성할 수 없습니다. 다시 시도해주세요.</td></tr>";
+        assignmentTable.innerHTML = "<tr><td colspan='8' style='color: red; font-weight: bold; padding: 20px;'>배정표를 생성할 수 없습니다. '다시 배정'을 눌러보거나, 제약 조건이 너무 강한지 확인해주세요.</td></tr>";
         return;
       }
 
       // 헤더 행 생성 (요일)
       const headerRow = assignmentTable.insertRow();
-      headerRow.insertCell().textContent = "ID"; // 첫 번째 빈 칸
+      const emptyTh = document.createElement("th");
+      emptyTh.textContent = "ID"; // 첫 번째 빈 칸
+      headerRow.appendChild(emptyTh);
       days.forEach(day => {
         const th = document.createElement("th");
         th.textContent = day;
