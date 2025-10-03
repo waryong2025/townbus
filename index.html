@@ -78,42 +78,92 @@
       gap: 1rem;
       margin: 1.5rem auto 0;
     }
-    button {
-      background-color: #2563eb;
-      color: white;
+    /* 모든 버튼 스타일 통일: 파란색 배경, 흰색 글자 */
+    button, .home-button {
+      background-color: #2563eb; /* 통일된 파란색 배경 */
+      color: white; /* 흰색 글자 */
       font-weight: 600;
       padding: 0.75rem 1.5rem;
       border-radius: 0.375rem;
       cursor: pointer;
       border: none;
       transition: background-color 0.3s;
+      text-align: center;
+      text-decoration: none; /* 링크 버튼에 필요 */
+      display: inline-block;
     }
-    button:hover {
-      background-color: #1d4ed8;
+    button:hover, .home-button:hover {
+      background-color: #1d4ed8; /* 호버 시 약간 어두운 파란색 */
     }
-    #pdfButton {
-      background-color: #16a34a;
+    
+    /* 홈 버튼 전용 스타일 */
+    #homeButton {
+        display: block;
+        width: 100%;
+        max-width: 800px;
+        margin-bottom: 1rem;
+        font-size: 1.25rem; /* 조금 큰 글자 크기 */
     }
-    #pdfButton:hover {
-      background-color: #15803d;
-    }
-    #resetButton {
-      background-color: #dc2626;
-    }
-    #resetButton:hover {
-      background-color: #b91c1c;
-    }
+
     .overflow-container {
       width: 100%;
       overflow-x: auto;
     }
+
+    /* -------------------------------------- */
+    /* 인쇄 전용 스타일 (A4에 꽉 차게 조정) */
+    /* -------------------------------------- */
+    @media print {
+      body {
+        background-color: white !important;
+        margin: 0;
+        padding: 0;
+        min-height: initial;
+        display: block;
+      }
+      .container {
+        max-width: none;
+        width: 100%;
+      }
+      #printableArea {
+        box-shadow: none !important;
+        border-radius: 0;
+        padding: 0.5cm;
+      }
+      .button-group, .notes, .home-button-wrapper {
+        display: none !important; /* 홈 버튼 포함 모든 버튼 숨김 */
+      }
+
+      /* 글꼴 및 테이블 크기 조정 */
+      h1 { font-size: 20pt; }
+      h2 { font-size: 14pt; }
+      table {
+        margin-top: 1rem;
+        width: 100%; 
+        table-layout: fixed; 
+      }
+      th, td {
+        padding: 0.5rem;
+        font-size: 10pt; 
+        border: 1px solid black;
+      }
+      td {
+          color: #1f2937;
+      }
+    }
   </style>
 </head>
 <body>
+  <div class="home-button-wrapper">
+    <a href="https://github.com/waryong2025/main" target="_blank" id="homeButton" class="home-button">
+      🏠 홈으로 돌아가기 (https://github.com/waryong2025/main)
+    </a>
+  </div>
+  
   <div class="container">
     <div id="printableArea">
       <h1 id="main-title">배차표</h1>
-      <h2>(2025년 종로08번)</h2>
+      <h2 id="sub-title">(종로08번)</h2>
       <div class="overflow-container">
         <table id="assignmentTable"></table>
       </div>
@@ -124,9 +174,9 @@
       </div>
     </div>
     <div class="button-group">
-      <button id="regenerateButton">다시 배정</button>
-      <button id="pdfButton">PDF로 저장</button>
-      <button id="resetButton">다시 설정</button>
+      <button id="regenerateButton">다시 배정</button> 
+      <button id="printButton">인쇄</button>
+      <button id="docxButton">DOCX로 저장</button>
     </div>
   </div>
 
@@ -144,11 +194,31 @@
 
     const assignmentTable = document.getElementById("assignmentTable");
     const regenerateButton = document.getElementById("regenerateButton");
-    const pdfButton = document.getElementById("pdfButton");
-    const resetButton = document.getElementById("resetButton");
+    const printButton = document.getElementById("printButton");
+    const docxButton = document.getElementById("docxButton");
     const mainTitleElement = document.getElementById("main-title");
+    const subTitleElement = document.getElementById("sub-title");
 
-    let currentAssignments = []; // 현재 배정표 데이터를 저장할 변수
+    let currentAssignments = []; 
+
+    /**
+     * 현재 년/월 정보를 객체로 반환합니다.
+     */
+    function getCurrentYearMonth() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        return { year, month };
+    }
+
+    /**
+     * 부제 텍스트를 현재 년월로 업데이트합니다.
+     */
+    function updateSubtitle() {
+        const { year, month } = getCurrentYearMonth();
+        // 부제 포맷을 "(YYYY년 MM월 종로08번)" 형식으로 업데이트
+        subTitleElement.textContent = `(${year}년 ${month}월 종로08번)`;
+    }
 
     // 배열을 무작위로 섞는 함수 (Fisher-Yates shuffle)
     function shuffleArray(array) {
@@ -159,42 +229,35 @@
       return array;
     }
 
-    // 차량 배정 로직
+    // 차량 배정 로직 (기존 로직 유지)
     function generateValidAssignments() {
-      const MAX_ATTEMPTS = 50000; // 최대 시도 횟수 (제약 조건이 까다로워 더 늘렸어!)
-      const nonFixedCarRows = carAssignmentsData.slice(0, 6); // 고정된 7번째 차량을 제외한 나머지 차량
-      const fixedCarNumber = 3614; // 고정된 7번째 차량 번호
-      const allPossibleNonFixedNumbers = Array.from(new Set(nonFixedCarRows.flatMap(row => row.numbers))); // 3614를 제외한 모든 가능한 번호들
-
+      const MAX_ATTEMPTS = 50000;
+      const nonFixedCarRows = carAssignmentsData.slice(0, 6);
+      const fixedCarNumber = 3614;
+      
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         const resultGrid = Array(carAssignmentsData.length).fill(null).map(() => Array(days.length).fill(null));
         let isSuccess = true;
 
         // 1. 고정된 7번째 차량 먼저 배정 (3614)
         for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-          resultGrid[6][dayIndex] = fixedCarNumber; // 항상 3614
+          resultGrid[6][dayIndex] = fixedCarNumber;
         }
 
-        // 각 행(차량 ID)별로 배정될 번호 풀을 준비 (원본 numbers 배열을 섞어서 사용)
-        // 각 행은 7개의 칸을 채워야 하므로, 6개의 고유 번호 중 하나가 두 번 사용될 예정
         const availableNumbersPools = nonFixedCarRows.map(carData => {
             const uniqueNums = Array.from(new Set(carData.numbers));
-            // 6개의 고유 번호로 7칸을 채우려면, 이 중 하나를 복제해야 함
-            // 어떤 번호를 복제할지는 나중에 배정 로직에서 결정
-            return uniqueNums; // 일단 고유 번호만 가져와서 섞어둠
+            return uniqueNums;
         });
 
         // 2. 나머지 차량들 (ID 1~6) 배정
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) { // 요일별로 채워나감
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
             const usedNumbersInColumnForThisDay = new Set();
-            usedNumbersInColumnForThisDay.add(fixedCarNumber); // 7번째 차량은 항상 3614
+            usedNumbersInColumnForThisDay.add(fixedCarNumber); 
 
-            // 각 행(carIndex)에 대해 해당 요일(dayIndex)의 번호를 찾음
             for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
                 let assigned = false;
-                const shuffledAvailableNums = shuffleArray([...availableNumbersPools[carIndex]]); // 해당 행의 사용 가능한 번호들을 섞음
+                const shuffledAvailableNums = shuffleArray([...availableNumbersPools[carIndex]]);
 
-                // 현재까지 배정된 이 행의 번호 사용 횟수 (가로줄 중복 횟수 체크용)
                 const currentRowCounts = {};
                 for(let prevDay = 0; prevDay < dayIndex; prevDay++) {
                     const num = resultGrid[carIndex][prevDay];
@@ -202,84 +265,72 @@
                 }
 
                 for (const carNum of shuffledAvailableNums) {
-                    // 1. 세로줄(열) 제약: 현재 열에서 이미 사용된 번호가 아니어야 함 (3614 제외)
                     if (usedNumbersInColumnForThisDay.has(carNum)) {
                         continue;
                     }
 
-                    // 2. 가로줄(행) 제약: 이 번호가 현재 행에서 2번 초과하여 사용되지 않았는지 확인
-                    // (6개 고유 번호로 7일을 채워야 하므로, 한 번호는 반드시 두 번 사용됨)
                     if ((currentRowCounts[carNum] || 0) >= 2) {
                         continue;
                     }
 
-                    // 3. 가로줄(행) 제약: 같은 숫자가 옆에 바로 붙지 말아야 함
                     if (dayIndex > 0 && resultGrid[carIndex][dayIndex - 1] === carNum) {
                         continue;
                     }
 
-                    // 모든 제약 조건을 만족하면 배정
                     resultGrid[carIndex][dayIndex] = carNum;
-                    usedNumbersInColumnForThisDay.add(carNum); // 현재 열에 사용된 번호로 기록
+                    usedNumbersInColumnForThisDay.add(carNum);
                     assigned = true;
                     break;
                 }
-                if (!assigned) { // 이 차량을 해당 요일에 배정할 수 없는 경우
+                if (!assigned) {
                     isSuccess = false;
                     break;
                 }
             }
             if (!isSuccess) break;
         }
-        if (!isSuccess) continue; // 다음 시도로 넘어감
+        if (!isSuccess) continue; 
 
-        // 3. 최종 검증 (혹시 모를 상황에 대비하여 모든 제약 조건을 다시 확인)
-        // 가로줄 (행) 검증: 2번 초과 중복 금지 & 옆에 바로 붙지 않기 (ID 1~6)
+        // 3. 최종 검증 (생략된 세부 검증 로직은 원본에 따라 유지)
         for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
           const rowNumbers = resultGrid[carIndex];
           const counts = {};
           for (let i = 0; i < rowNumbers.length; i++) {
             const num = rowNumbers[i];
             counts[num] = (counts[num] || 0) + 1;
-
-            // 옆에 바로 붙는 중복 체크
             if (i > 0 && rowNumbers[i] === rowNumbers[i-1]) {
                 isSuccess = false;
                 break;
             }
           }
-          if (!isSuccess) break; // 옆에 붙는 중복 발견
-
-          // 2번 초과 중복 체크
+          if (!isSuccess) break;
           for (const num in counts) {
             if (counts[num] > 2) {
               isSuccess = false;
               break;
             }
           }
-          if (!isSuccess) break; // 2번 초과 중복 발견
+          if (!isSuccess) break;
         }
-        if (!isSuccess) continue; // 다음 시도로 넘어감
+        if (!isSuccess) continue; 
 
-        // 세로줄 (열) 검증: 6개는 다르고, 7번째(3614) 포함하여 3614 외에는 중복 없어야 함
         for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
           const columnNumbers = [];
           for (let carIdx = 0; carIdx < carAssignmentsData.length; carIdx++) {
             columnNumbers.push(resultGrid[carIdx][dayIndex]);
           }
-
           const counts = {};
           for (const num of columnNumbers) {
             counts[num] = (counts[num] || 0) + 1;
           }
 
           for (const num in counts) {
-            if (num == fixedCarNumber) { // 3614는 최대 두 번까지 허용
+            if (num == fixedCarNumber) {
               if (counts[num] > 2) {
                 isSuccess = false;
                 break;
               }
-            } else { // 다른 번호는 한 번만 허용
+            } else {
               if (counts[num] > 1) {
                 isSuccess = false;
                 break;
@@ -288,13 +339,12 @@
           }
           if (!isSuccess) break;
         }
-        if (!isSuccess) continue; // 다음 시도로 넘어감
+        if (!isSuccess) continue; 
 
-        // 모든 제약 조건을 만족했다면!
         return resultGrid;
       }
-      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다. 제약 조건이 너무 강하거나, 주어진 차량 번호로는 모든 조건을 만족하는 조합을 만들 수 없을 수 있습니다.");
-      return null; // 유효한 배정표를 찾지 못한 경우
+      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다.");
+      return null;
     }
 
     // 테이블 렌더링 함수
@@ -302,7 +352,7 @@
       assignmentTable.innerHTML = ""; // 기존 내용 비우기
 
       if (!assignments) {
-        assignmentTable.innerHTML = "<tr><td colspan='8' style='color: red; font-weight: bold; padding: 20px;'>배정표를 생성할 수 없습니다. '다시 배정'을 눌러보거나, 제약 조건이 너무 강한지 확인해주세요.</td></tr>";
+        assignmentTable.innerHTML = "<tr><td colspan='8' style='color: red; font-weight: bold; padding: 20px;'>배정표를 생성할 수 없습니다. 다시 시도하거나, 제약 조건이 너무 강한지 확인해주세요.</td></tr>";
         return;
       }
 
@@ -330,66 +380,103 @@
       });
     }
 
+    // DOCX 저장 함수 (A4 안정화 및 사용자 지정 스타일 적용)
+    function exportTableToDocx(tableId) {
+        const table = document.getElementById(tableId);
+        const subTitleText = subTitleElement.textContent; // 현재 화면의 부제 가져오기
+        
+        // Word에서 잘 열리는 HTML 형식으로 저장 (.doc 확장자로)
+        const content = `
+            <!DOCTYPE html>
+            <html lang="ko">
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    /* A4 안정화 조정 및 사용자 지정 스타일 */
+                    body { font-family: 'Malgun Gothic', 'Dotum', sans-serif; padding: 15px; }
+                    h1 { font-size: 20pt; text-align: center; margin-bottom: 5pt; }
+                    h2 { font-size: 14pt; text-align: center; margin-bottom: 15pt; }
+                    table { 
+                        border-collapse: collapse; 
+                        width: 90%; /* 넓이 90% 축소 */
+                        table-layout: fixed; 
+                        margin: 15px auto; /* 중앙 정렬 */
+                    }
+                    /* 헤더(요일)와 첫 번째 열(ID) 스타일: 굵게, 14pt, 굵은 선 */
+                    th {
+                        border: 2px solid black; /* 굵은 선 */
+                        padding: 6px; /* 높이 축소 (기존 0.75rem 약 12px -> 6px) */
+                        text-align: center; 
+                        font-size: 14pt; /* 14pt */
+                        font-weight: bold; /* 굵은 글자 */
+                        background-color: #f0f0f0; 
+                    }
+                    /* 데이터 셀 스타일: 차량 번호 12pt, 굵은 선 */
+                    td { 
+                        border: 2px solid black; /* 굵은 선 */
+                        padding: 6px; /* 높이 축소 */
+                        text-align: center; 
+                        font-size: 12pt; /* 12pt */
+                        color: #1f2937;
+                    }
+                    /* ID 셀 (첫 번째 열)만 14pt, 굵게 */
+                    table tr td:first-child { 
+                        font-size: 14pt; 
+                        font-weight: bold;
+                    }
+
+                    p { font-size: 10pt; } /* 주석 글자 크기 조정 */
+                </style>
+            </head>
+            <body>
+                <h1>${mainTitleElement.textContent}</h1>
+                <h2>${subTitleText}</h2> ${table.outerHTML}
+                <p style="margin-top: 30px;"><strong>주의)</strong> 오후 운행차량은 2시00분부터 운행하시길 부탁드립니다.</p>
+                <p>차량 3614호는 근무자 근태확인 후 마지막 차량으로 배차가 들어갑니다.</p>
+                <p>5월 1일부터는 첫차 06:00 막차 23:20입니다. <strong> ( By InJoongOh )  </strong></p>
+            </body>
+            </html>
+        `;
+
+        const blob = new Blob([content], {
+            type: 'application/msword;charset=utf-8'
+        });
+
+        // 날짜와 시간을 포함한 파일명 생성
+        const now = new Date();
+        const y = String(now.getFullYear());
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const h = String(now.getHours()).padStart(2, '0');
+        const min = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        const docxFilename = `차량 배정표_${y}${m}${d}_${h}${min}${s}.doc`;
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = docxFilename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     // 초기 로드 및 버튼 이벤트
     regenerateButton.addEventListener("click", () => {
       currentAssignments = generateValidAssignments();
       renderTable(currentAssignments);
     });
 
-    resetButton.addEventListener("click", () => {
-      // 초기 상태로 되돌리거나, 새로운 빈 상태로 시작
-      // 여기서는 다시 배정 버튼을 누른 것과 동일하게 동작하도록 설정
-      currentAssignments = generateValidAssignments();
-      renderTable(currentAssignments);
-      // 혹은 완전히 비우고 싶다면 assignmentTable.innerHTML = "";
+    printButton.addEventListener("click", () => {
+      window.print(); // 브라우저 인쇄 기능 호출
     });
 
-    pdfButton.addEventListener("click", async () => {
-      const { jsPDF } = window.jspdf;
-      const printableArea = document.getElementById("printableArea");
-
-      // PDF 저장 시 제목을 "차량 배정표_YYYYMMDD_HHMMSS" 형식으로 변경
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      const filename = `차량 배정표_${year}${month}${day}_${hours}${minutes}${seconds}.pdf`;
-
-      // 잠시 제목 변경
-      const originalTitle = mainTitleElement.textContent;
-      mainTitleElement.textContent = `차량 배정표 (${year}년 ${month}월 ${day}일)`;
-
-      html2canvas(printableArea, { scale: 2 }).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = 297; // A4 height in mm
-        const imgHeight = canvas.height * imgWidth / canvas.width;
-        let heightLeft = imgHeight;
-        let position = 0;
-
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-
-        while (heightLeft >= 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-          heightLeft -= pageHeight;
-        }
-        pdf.save(filename);
-
-        // 원래 제목으로 되돌리기
-        mainTitleElement.textContent = originalTitle;
-      });
+    docxButton.addEventListener("click", () => {
+      exportTableToDocx('assignmentTable');
     });
 
-
-    // 페이지 로드 시 초기 배정표 생성
+    // 페이지 로드 시 초기 배정표 생성 및 타이틀 업데이트
     document.addEventListener("DOMContentLoaded", () => {
+      updateSubtitle(); // 페이지 로드 시 현재 년월이 포함된 부제 업데이트
       currentAssignments = generateValidAssignments();
       renderTable(currentAssignments);
     });
