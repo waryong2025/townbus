@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>요일별 차량 배정표 - 고급 제약 조건</title>
+  <title>요일별 차량 배정표 - 중복 없음</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -78,6 +78,7 @@
       gap: 1rem;
       margin: 1.5rem auto 0;
     }
+    
     /* 모든 버튼 스타일 통일: 파란색 배경, 흰색 글자 */
     button, .home-button {
       background-color: #2563eb; /* 통일된 파란색 배경 */
@@ -169,8 +170,8 @@
       </div>
       <div class="notes">
         <p><strong>주의)</strong> 오후 운행차량은 2시00분부터 운행하시길 부탁드립니다.</p>
-        <p>차량 3614호는 근무자 근태확인 후 마지막 차량으로 배차가 들어갑니다.</p>
-        <p>5월 1일부터는 첫차 06:00 막차 23:20입니다. <strong> ( By InJoongOh )  </strong></p>
+        
+        <p>5월 1일부터는 첫차 06:00 막차 23:20입니다. <strong> ( By InJoongOh ) </strong></p>
       </div>
     </div>
     <div class="button-group">
@@ -182,15 +183,20 @@
 
   <script>
     const days = ["월", "화", "수", "목", "금", "토", "일"];
+    
+    // 7개의 차량 ID 목록
     const carAssignmentsData = [
-      { id: 1, label: "1", numbers: [5504, 5535, 6201, 3611, 3615, 5510] },
-      { id: 2, label: "2", numbers: [5510, 5504, 3615, 6201, 3611, 5535] },
-      { id: 3, label: "3", numbers: [6201, 3611, 5504, 5510, 5535, 3615] },
-      { id: 4, label: "4", numbers: [3611, 6201, 5535, 3615, 5510, 5504] },
-      { id: 5, label: "5", numbers: [3615, 5510, 3611, 5504, 6201, 5535] },
-      { id: 6, label: "6", numbers: [5535, 3615, 5510, 6201, 3611, 5504] },
-      { id: 7, label: "7", numbers: [3614, 3614, 3614, 3614, 3614, 3614, 3614], isFixed: true }
+      { id: 1, label: "1" }, 
+      { id: 2, label: "2" }, 
+      { id: 3, label: "3" }, 
+      { id: 4, label: "4" }, 
+      { id: 5, label: "5" }, 
+      { id: 6, label: "6" }, 
+      { id: 7, label: "7" }
     ];
+
+    // 7개의 고유 차량 번호 목록 (3614호 포함)
+    const allUniqueCarNumbers = [3611, 5510, 3615, 6201, 5504, 5535, 3614]; 
 
     const assignmentTable = document.getElementById("assignmentTable");
     const regenerateButton = document.getElementById("regenerateButton");
@@ -229,122 +235,41 @@
       return array;
     }
 
-    // 차량 배정 로직 (기존 로직 유지)
+    /**
+     * 차량 배정 로직: 가로줄(행)과 세로줄(열) 모두에서 차량 번호가 중복되지 않도록 라틴 방진을 생성합니다.
+     * @returns {number[][]} 7x7 배정 그리드
+     */
     function generateValidAssignments() {
-      const MAX_ATTEMPTS = 50000;
-      const nonFixedCarRows = carAssignmentsData.slice(0, 6);
-      const fixedCarNumber = 3614;
+      const NUM_CARS = allUniqueCarNumbers.length; // 7
       
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const resultGrid = Array(carAssignmentsData.length).fill(null).map(() => Array(days.length).fill(null));
-        let isSuccess = true;
+      // 1. 차량 번호 리스트를 숫자 값으로 변환 (인덱스 계산을 위해)
+      const carNumberMap = new Map();
+      allUniqueCarNumbers.forEach((num, index) => carNumberMap.set(index, num));
+      
+      // 2. 무작위 시작 순열을 생성합니다. (0부터 6까지)
+      let initialRow = Array.from({ length: NUM_CARS }, (_, i) => i);
+      initialRow = shuffleArray(initialRow); 
 
-        // 1. 고정된 7번째 차량 먼저 배정 (3614)
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-          resultGrid[6][dayIndex] = fixedCarNumber;
-        }
+      const resultGrid = Array(NUM_CARS).fill(null).map(() => Array(NUM_CARS).fill(null));
 
-        const availableNumbersPools = nonFixedCarRows.map(carData => {
-            const uniqueNums = Array.from(new Set(carData.numbers));
-            return uniqueNums;
-        });
-
-        // 2. 나머지 차량들 (ID 1~6) 배정
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-            const usedNumbersInColumnForThisDay = new Set();
-            usedNumbersInColumnForThisDay.add(fixedCarNumber); 
-
-            for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
-                let assigned = false;
-                const shuffledAvailableNums = shuffleArray([...availableNumbersPools[carIndex]]);
-
-                const currentRowCounts = {};
-                for(let prevDay = 0; prevDay < dayIndex; prevDay++) {
-                    const num = resultGrid[carIndex][prevDay];
-                    if (num !== null) currentRowCounts[num] = (currentRowCounts[num] || 0) + 1;
-                }
-
-                for (const carNum of shuffledAvailableNums) {
-                    if (usedNumbersInColumnForThisDay.has(carNum)) {
-                        continue;
-                    }
-
-                    if ((currentRowCounts[carNum] || 0) >= 2) {
-                        continue;
-                    }
-
-                    if (dayIndex > 0 && resultGrid[carIndex][dayIndex - 1] === carNum) {
-                        continue;
-                    }
-
-                    resultGrid[carIndex][dayIndex] = carNum;
-                    usedNumbersInColumnForThisDay.add(carNum);
-                    assigned = true;
-                    break;
-                }
-                if (!assigned) {
-                    isSuccess = false;
-                    break;
-                }
-            }
-            if (!isSuccess) break;
-        }
-        if (!isSuccess) continue; 
-
-        // 3. 최종 검증 (생략된 세부 검증 로직은 원본에 따라 유지)
-        for (let carIndex = 0; carIndex < nonFixedCarRows.length; carIndex++) {
-          const rowNumbers = resultGrid[carIndex];
-          const counts = {};
-          for (let i = 0; i < rowNumbers.length; i++) {
-            const num = rowNumbers[i];
-            counts[num] = (counts[num] || 0) + 1;
-            if (i > 0 && rowNumbers[i] === rowNumbers[i-1]) {
-                isSuccess = false;
-                break;
-            }
+      // 3. 라틴 방진 생성 (무작위 시작 순열과 순환을 결합하여 중복 없는 그리드 생성)
+      for (let carIndex = 0; carIndex < NUM_CARS; carIndex++) {
+          for (let dayIndex = 0; dayIndex < NUM_CARS; dayIndex++) {
+              // (시작 인덱스 + 요일 인덱스)를 NUM_CARS로 나눈 나머지를 사용하여 순환 로직 적용
+              // 각 행은 이전 행을 기준으로 순환 이동하며, 열 중복과 행 중복을 피함
+              const index = (initialRow[dayIndex] + carIndex) % NUM_CARS;
+              
+              // 인덱스를 실제 차량 번호로 변환하여 할당
+              resultGrid[carIndex][dayIndex] = carNumberMap.get(index);
           }
-          if (!isSuccess) break;
-          for (const num in counts) {
-            if (counts[num] > 2) {
-              isSuccess = false;
-              break;
-            }
-          }
-          if (!isSuccess) break;
-        }
-        if (!isSuccess) continue; 
-
-        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-          const columnNumbers = [];
-          for (let carIdx = 0; carIdx < carAssignmentsData.length; carIdx++) {
-            columnNumbers.push(resultGrid[carIdx][dayIndex]);
-          }
-          const counts = {};
-          for (const num of columnNumbers) {
-            counts[num] = (counts[num] || 0) + 1;
-          }
-
-          for (const num in counts) {
-            if (num == fixedCarNumber) {
-              if (counts[num] > 2) {
-                isSuccess = false;
-                break;
-              }
-            } else {
-              if (counts[num] > 1) {
-                isSuccess = false;
-                break;
-              }
-            }
-          }
-          if (!isSuccess) break;
-        }
-        if (!isSuccess) continue; 
-
-        return resultGrid;
       }
-      console.warn("최대 시도 횟수를 초과했습니다. 유효한 배정표를 찾지 못했습니다.");
-      return null;
+
+      // 4. 생성된 라틴 방진의 행(차량 ID) 순서를 무작위로 섞습니다.
+      let finalAssignments = shuffleArray(resultGrid);
+
+      // (선택적) 열 순서 섞기 (요일 순서는 월~일이므로 생략)
+      
+      return finalAssignments;
     }
 
     // 테이블 렌더링 함수
@@ -352,7 +277,7 @@
       assignmentTable.innerHTML = ""; // 기존 내용 비우기
 
       if (!assignments) {
-        assignmentTable.innerHTML = "<tr><td colspan='8' style='color: red; font-weight: bold; padding: 20px;'>배정표를 생성할 수 없습니다. 다시 시도하거나, 제약 조건이 너무 강한지 확인해주세요.</td></tr>";
+        assignmentTable.innerHTML = "<tr><td colspan='8' style='color: red; font-weight: bold; padding: 20px;'>배정표를 생성할 수 없습니다.</td></tr>";
         return;
       }
 
@@ -433,7 +358,7 @@
                 <h2>${subTitleText}</h2> ${table.outerHTML}
                 <p style="margin-top: 30px;"><strong>주의)</strong> 오후 운행차량은 2시00분부터 운행하시길 부탁드립니다.</p>
                 <p>차량 3614호는 근무자 근태확인 후 마지막 차량으로 배차가 들어갑니다.</p>
-                <p>5월 1일부터는 첫차 06:00 막차 23:20입니다. <strong> ( By InJoongOh )  </strong></p>
+                <p>5월 1일부터는 첫차 06:00 막차 23:20입니다. <strong> ( By InJoongOh ) </strong></p>
             </body>
             </html>
         `;
@@ -450,7 +375,7 @@
         const h = String(now.getHours()).padStart(2, '0');
         const min = String(now.getMinutes()).padStart(2, '0');
         const s = String(now.getSeconds()).padStart(2, '0');
-        const docxFilename = `차량 배정표_${y}${m}${d}_${h}${min}${s}.doc`;
+        const docxFilename = `차량 배정표_${y}${m}${d}_${h}${min}${s}.doc`; // .doc 확장자로 저장 (Word 호환성)
 
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
